@@ -13,3 +13,6 @@ wornout/
 tmp/
 old/
 # develop/
+
+# mac related
+.DS_Store
