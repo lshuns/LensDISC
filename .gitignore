@@ -5,11 +5,14 @@ __pycache__/
 *.so
 *.a
 
-test*
-improvement.txt
+# test*
+# improvement.txt
 
 output/
 wornout/
 tmp/
 old/
 develop/
+
+# mac related
+.DS_Store
