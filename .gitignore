@@ -12,7 +12,7 @@ output/
 wornout/
 tmp/
 old/
-# develop/
+develop/
 
 # mac related
 .DS_Store
