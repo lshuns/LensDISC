@@ -2,7 +2,7 @@
 # @Author: lshuns
 # @Date:   2020-05-01 21:13:39
 # @Last Modified by:   lshuns
-# @Last Modified time: 2020-05-04 09:48:08
+# @Last Modified time: 2020-05-11 22:54:46
 
 ### Levin method for solving highly oscillatory one-dimensional integral
 ###### Target form: int_0^Infinity dx x J0(rx) exp(i G(x))
@@ -322,7 +322,7 @@ def LevinFunc(xmin, xmax, size, w, y, model_lens, cosORsin):
     return I
    
 
-def InteFunc(w, y, model_lens='SIS', size=19, accuracy=1e-5, N_step=50, Niter=int(1e5)):
+def InteFunc(w, y, model_lens='SIS', size=19, accuracy=1e-6, N_step=50, Niter=int(1e5)):
     """
     Solve the integral
         int_0^1 dx (x/(1-x)**3) J0(r*(x/(1-x))) exp(i G(x/(1-x)))
@@ -380,6 +380,10 @@ def InteFunc(w, y, model_lens='SIS', size=19, accuracy=1e-5, N_step=50, Niter=in
             if b >= xmax:
                 # if this is the case, refine the binning
                 dx = (xmax-a)/2.
+                # check if dx meets the accuracy
+                if dx < accuracy:
+                    flag_succeed = True
+                    break
                 b = a + dx
 
             I_test0 = LevinFunc(a, b, size, w, y, model_lens, part_name)
