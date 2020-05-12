@@ -2,7 +2,7 @@
 # @Author: lshuns
 # @Date:   2020-05-01 21:13:39
 # @Last Modified by:   lshuns
-# @Last Modified time: 2020-05-11 22:54:46
+# @Last Modified time: 2020-05-12 09:41:00
 
 ### Levin method for solving highly oscillatory one-dimensional integral
 ###### Target form: int_0^Infinity dx x J0(rx) exp(i G(x))
@@ -303,7 +303,10 @@ def LevinFunc(xmin, xmax, size, w, y, model_lens, cosORsin):
         raise Exception("Unsupported cosORsin value !")
 
     # solve linear equations
-    clist = np.linalg.solve(Lmatrix, rhslist)
+    try:
+        clist = np.linalg.solve(Lmatrix, rhslist)
+    except np.linalg.LinAlgError:
+        return 0
     # print('clist', clist)
 
     # collocation approximation
@@ -387,6 +390,11 @@ def InteFunc(w, y, model_lens='SIS', size=19, accuracy=1e-6, N_step=50, Niter=in
                 b = a + dx
 
             I_test0 = LevinFunc(a, b, size, w, y, model_lens, part_name)
+            # # break with LinAlgError
+            # if I_test0==0:
+            #     flag_succeed = (b-a)
+            #     print("Here 0")
+            #     break
             # print("new sub-result", I_test0)
 
             # avoid accuracy check for the first run
@@ -406,7 +414,20 @@ def InteFunc(w, y, model_lens='SIS', size=19, accuracy=1e-6, N_step=50, Niter=in
             
                 # split to half
                 xmid = (b+a)/2.
-                I_test1 = LevinFunc(a, xmid, size, w, y, model_lens, part_name) + LevinFunc(xmid, b, size, w, y, model_lens, part_name)
+                # check if dx meets the accuracy
+                if (b-xmid) < accuracy:
+                    flag_succeed = True
+                    break
+
+                I_test11 = LevinFunc(a, xmid, size, w, y, model_lens, part_name)
+                I_test12 = LevinFunc(xmid, b, size, w, y, model_lens, part_name)
+                # # break with LinAlgError
+                # if (I_test11==0) or (I_test12==0):
+                #     flag_succeed = (b-a)
+                #     print("here 11")
+                #     break
+
+                I_test1 = I_test11 + I_test12
                 # define the middle-way accuracy by looking at the difference between half-split result and original result
                 diff_left = np.absolute(I_test1-I_test0)
                 if diff_left < accuracy:
@@ -415,7 +436,7 @@ def InteFunc(w, y, model_lens='SIS', size=19, accuracy=1e-6, N_step=50, Niter=in
 
                 # iterating
                 b = xmid
-                I_test0 = LevinFunc(a, b, size, w, y, model_lens, part_name)
+                I_test0 = I_test11
 
             # accumulate results from the last run
             I_final += I_test0
@@ -534,8 +555,8 @@ if __name__ == '__main__':
 
     import time
     import cmath 
-    w = 0.1 
-    y = 1.0
+    y = 0.3
+    w = 1.10209009009009
     # # results from Mathematica
     # # 2.7270784320701793 + 12.832498219682217*I (integral)
     # # -0.1593982590701816 (phase)
