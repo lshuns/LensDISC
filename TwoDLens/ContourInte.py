@@ -2,7 +2,7 @@
 # @Author: lshuns & mrgr
 # @Date:   2020-07-17 15:49:19
 # @Last Modified by:   lshuns
-# @Last Modified time: 2020-08-07 16:54:31
+# @Last Modified time: 2020-08-30 12:45:03
 
 ### solve the diffraction integral in virture of Fourier transform & histogram counting
 ###### reference: Nakamura 1999; Ulmer 1995
@@ -10,10 +10,6 @@
 ######### Coordinates convention:
 ############# the origin is set in the centre of perturbation (external shear) and the x-aixs is parallel to the direction of shear, that means gamma2 = 0
 ############# the source is set in the origin (xs=0)
-
-# ++++++++ ISSUES:
-#       Cannot go to high tlim
-#       Unaccurate for high tau
 
 
 import numpy as np
@@ -23,7 +19,7 @@ import os
 import sys
 # Self-defined package
 sys.path.insert(0,os.path.realpath('..')) 
-from Images import TFunc, Images
+from Images import TFunc, dTFunc, Images
 
 class TreeClass(object):
     """
@@ -31,7 +27,10 @@ class TreeClass(object):
 
     Parameters
     ----------
-
+    dt_require: float
+        Sampling step in time delay function.
+    tlim: float
+        Sampling limit in time delay function.    
     """
 
     def __init__(self, dt_require, tlim):
@@ -47,76 +46,73 @@ class TreeClass(object):
                                         'weights': []
                                         })
 
-    def SplitFunc(self, weights, x1_grid, x2_grid, T_grid, singleORwhole):
+    def SplitFunc(self, weights, x1_list, x2_list, T_list, dT_list):
         """
         Split nodes into bad or good based on the errors of tau values.
         """
 
-        # +++++++++++++ Bounds
-        if singleORwhole == 'single':
-            # each node has bounds (for extended nodes)
-            tmp = np.ones([5,5], dtype=bool)
-            tmp[1:-1,1:-1] = np.invert(tmp[1:-1,1:-1])
-
-            bounds_flag = np.tile(tmp, int(T_grid.shape[1]/5))
-
-        elif singleORwhole == 'whole':
-            # bounds for a whole matrix (for initial grid)
-            tmp = np.ones_like(T_grid, dtype=bool)
-            tmp[1:-1,1:-1] = np.invert(tmp[1:-1,1:-1])
-
-            bounds_flag = tmp
-            
-        else:
-            raise Exception("Unknown singleORwhole values!")
-
-        # really used
-        flag_nonBounds = np.invert(bounds_flag)
+        # ++++++++++++ calculate error based on gradient
+        error_list = dT_list*(weights**0.5)
+        flag_error = (error_list < self.dt_require)
 
         # +++++++++++++ tlim
-        flag_tlim = (T_grid < self.tlim)
-
-        # +++++++++++++ dtau
-        # initial grid of flag
-        flag_grid = np.zeros_like(T_grid)
-
-        # evaluate accuracy
-        dtau_row = np.absolute(T_grid[:, :-1] - T_grid[:, 1:])
-        dtau_col = np.absolute(T_grid[:-1, :] - T_grid[1:, :])
-
-        # flag insufficient dtau
-        flag_row = dtau_row >= self.dt_require
-        flag_col = dtau_col >= self.dt_require
-
-        # flip nodes that do not meet accuracy
-        ## right
-        flag_grid[:, :-1] += flag_row    
-        ## left
-        flag_grid[:, 1:] += flag_row
-        ## bottom
-        flag_grid[:-1, :] += flag_col
-        ## top
-        flag_grid[1:, :] += flag_col
-        ## only those pass all (=0) are accurate enough
-        flag_dtau_big = (flag_grid > 0)
-        flag_dtau_small = np.invert(flag_dtau_big)
+        # check the min T in a range (avoid removing potential good nodes)
+        T_lim_list = T_list - error_list
+        flag_tlim = (T_list < self.tlim)
 
         # +++++++++++++ total flag
-        flag_bad = flag_nonBounds & flag_tlim & flag_dtau_big
-        flag_good = flag_nonBounds & flag_tlim & flag_dtau_small
+        flag_bad = flag_tlim & np.invert(flag_error)
+        flag_good = flag_tlim & flag_error
 
         # ++++++++++++++ good node information saved to DataFrame
         tmp = pd.DataFrame(data={
-            'x1': x1_grid[flag_good].flatten(),
-            'x2': x2_grid[flag_good].flatten(),
-            'tau': T_grid[flag_good].flatten(),
-            'weights': weights*np.ones(len(x1_grid[flag_good].flatten()))
+            'x1': x1_list[flag_good],
+            'x2': x2_list[flag_good],
+            'tau': T_list[flag_good],
+            'weights': weights*np.ones_like(x1_list[flag_good])
             })
         self.good_nodes = self.good_nodes.append(tmp, ignore_index=True)
 
-        # ++++++++++++++ bad node simply directory
-        self.bad_nodes = [x1_grid[flag_bad].flatten(), x2_grid[flag_bad].flatten()]
+        # ++++++++++++++ bad node using simple directory
+        self.bad_nodes = [x1_list[flag_bad], x2_list[flag_bad], T_list[flag_bad], dT_list[flag_bad]]
 
+
+def FtSingularFunc(images_info, tau_list):
+    """
+    Calculate the singular part of F(t)
+
+    Parameters
+    ----------
+    images_info: DataFrame
+        All images' information.
+    tau_list: numpy array
+        Sampling of tau where Ftc being calculated.
+    """
+
+    # shift tau
+    images_info['tauI'] -= np.amin(images_info['tauI'].values)
+
+    Ftc = np.zeros_like(tau_list)
+    for index, row in images_info.iterrows():
+        tmp = np.zeros_like(tau_list)
+        # min 
+        if row['typeI'] == 'min':
+            tmp[tau_list>=row['tauI']] = 2.*np.pi*(row['muI']**0.5)
+            # print(">>>> a min image")
+        # max 
+        elif row['typeI'] == 'max':
+            tmp[tau_list>=row['tauI']] = -2.*np.pi*(row['muI']**0.5)
+            # print(">>>> a max image")
+        # saddle 
+        elif row['typeI'] == 'saddle':
+            tmp = -2.*((-row['muI'])**0.5)*np.log(np.absolute(tau_list-row['tauI']))
+            # print(">>>> a saddle image")
+        else:
+            raise Exception("Unsupported image type {:} !".format(row['typeI']))
+
+        Ftc += tmp
+
+    return Ftc
 
 def FtHistFunc(xL12, lens_model, kappa=0, gamma=0, tlim=6., dt=1e-2):
     """
@@ -139,38 +135,23 @@ def FtHistFunc(xL12, lens_model, kappa=0, gamma=0, tlim=6., dt=1e-2):
     """
 
     # calculate the images
-    nimages, xI12, muI, tauI = Images(xL12, lens_model, kappa, gamma, return_mu=True, return_T=True) 
+    nimages, xI12, muI, tauI, typeI = Images(xL12, lens_model, kappa, gamma, return_mu=True, return_T=True) 
     # collect image info
     images_info = pd.DataFrame(data=
                     {
                     'xI1': xI12[0],
                     'xI2': xI12[1],
                     'muI': muI,
-                    'tauI': tauI
+                    'tauI': tauI,
+                    'typeI': typeI
                     })
-    # sort images
-    try:
-    # new for version 1.0.0
-        # sort by tau
-        images_info_tau = images_info.sort_values(by=['tauI'], ignore_index=True)
-        # sort by xI2 (for dividing)
-        images_info_xI2 = images_info.sort_values(by=['xI2'], ignore_index=True)
 
-    except:
-    # old
-        # sort by tau
-        images_info_tau = images_info.sort_values(by=['tauI'])
-        images_info_tau = images_info_tau.reset_index(drop=True)
-        # sort by xI2 (for dividing)
-        images_info_xI2 = images_info.sort_values(by=['xI2'])
-        images_info_xI2 = images_info_xI2.reset_index(drop=True)
-    # print(images_info)
-    # print(images_info_tau)
-    # print(images_info_xI2)
+    # tau bounds from images
+    tImin = np.amin(images_info['tauI'].values)
+    tImax = np.amax(images_info['tauI'].values)
 
-    # tlim
-    tlim += images_info_tau['tauI'].values[-1]
-    # print(tlim)
+    # tlim is set on the top of tImax
+    tlim += tImax
 
     # initial guess of bounds
     ## x1
@@ -184,7 +165,7 @@ def FtHistFunc(xL12, lens_model, kappa=0, gamma=0, tlim=6., dt=1e-2):
     dxI2 = xI2_max - xI2_min
     boundI_x2 = [xI2_min-dxI2, xI2_max+dxI2]
 
-    # extend bounds until meeting tlim
+    # +++ extend bounds until meeting tlim
     while True:
         N_bounds = 1000
         # build the bounds
@@ -215,8 +196,9 @@ def FtHistFunc(xL12, lens_model, kappa=0, gamma=0, tlim=6., dt=1e-2):
         boundI_x1 = [boundI_x1[0]-0.5*dxI1, boundI_x1[1]+0.5*dxI1]
         boundI_x2 = [boundI_x2[0]-0.5*dxI2, boundI_x2[1]+0.5*dxI2]
 
+    # +++ hist counting
     # initial steps
-    N_x = 10000
+    N_x = 5000
 
     # initial nodes
     x1_node = np.linspace(boundI_x1[0], boundI_x1[1], N_x)
@@ -224,80 +206,73 @@ def FtHistFunc(xL12, lens_model, kappa=0, gamma=0, tlim=6., dt=1e-2):
     dx1 = x1_node[1]-x1_node[0]
     dx2 = x2_node[1]-x2_node[0]
     x1_grid, x2_grid = np.meshgrid(x1_node, x2_node)     
-    T_grid = TFunc([x1_grid, x2_grid], xL12, lens_model, kappa, gamma)
+    x1_list = x1_grid.flatten()
+    x2_list = x2_grid.flatten()
+    T_list = TFunc([x1_list, x2_list], xL12, lens_model, kappa, gamma)
+    # gradient for error calculation
+    dtaudx1, dtaudx2 = dTFunc([x1_list, x2_list], xL12, lens_model, kappa, gamma)
+    dT_list = np.sqrt(np.square(dtaudx1)+np.square(dtaudx2))
 
     # build Tree
     Tree = TreeClass(dt, tlim)
-    Tree.SplitFunc(dx1*dx2, x1_grid, x2_grid, T_grid, 'whole')
-    # Tree.InitialNotesFunc(dx1*dx2, x1_grid, x2_grid, T_grid, 'whole')
-    # Tree.SplitFunc(T_grid)
+    Tree.SplitFunc(dx1*dx2, x1_list, x2_list, T_list, dT_list)
 
     # iterate until bad_nodes is empty
     idx = 0
-    # while not Tree.bad_nodes.empty:
     while len(Tree.bad_nodes[0]):
-        #
         idx +=1
         print('loop', idx)
-        # extend nodes
-        x1_grids = []
-        x2_grids = []
-        # print('number of bad_nodes', len(Tree.bad_nodes.index))
-        print('number of bad_nodes', len(Tree.bad_nodes[0]))
 
-
-
-        time1 = time.time()
-
-        # N_bad = len(Tree.bad_nodes.index)
+        # bad nodes
         N_bad = len(Tree.bad_nodes[0])
+        print('number of bad_nodes', N_bad)
 
-
-        # duplicate original positions
-        # x1_bad = np.repeat(Tree.bad_nodes['x1'].values, 5)
-        # x2_bad = np.repeat(Tree.bad_nodes['x2'].values, 5)
-        x1_bad = np.repeat(Tree.bad_nodes[0], 5)
-        x2_bad = np.repeat(Tree.bad_nodes[1], 5)
-
-        # new grid
-        x1_node = x1_bad + np.tile([-dx1, -0.5*dx1, 0, 0.5*dx1, dx1], N_bad)
-        x1_grids = np.tile(x1_node, (5, 1))
-        ##
-        x2_grids = np.tile(x2_bad, (5, 1)) + np.array([-dx2, -0.5*dx2, 0, 0.5*dx2, dx2]).reshape(-1,1)
-
-        # for index, bad_node in Tree.bad_nodes.iterrows():
-        #     # new bounds
-        #     x1_left = bad_node['x1'] - dx1
-        #     x1_right = bad_node['x1'] + dx1
-        #     x2_bottom = bad_node['x2'] - dx2
-        #     x2_top = bad_node['x2'] + dx2
-        #     # new nodes
-        #     x1_node = np.linspace(x1_left, x1_right, 5)
-        #     x2_node = np.linspace(x2_bottom, x2_top, 5)
-        #     # new grid
-        #     x1_grid, x2_grid = np.meshgrid(x1_node, x2_node) 
-            
-        #     # save 
-        #     x1_grids.append(x1_grid)
-        #     x2_grids.append(x2_grid)
-        time2 = time.time()
-        print('grid finished in', time2-time1)
-
-        # calculate tau
-        T_grids = TFunc([x1_grids, x2_grids], xL12, lens_model, kappa, gamma)
+        # +++ subdivide bad nodes' region
         time1 = time.time()
-        print('T_grid finished in', time1-time2)
+        # each bad node being subdivided to 4 small ones
+        x1_bad = np.repeat(Tree.bad_nodes[0], 4)
+        x2_bad = np.repeat(Tree.bad_nodes[1], 4)
+        # new nodes
+        x1_list = x1_bad + np.tile([-0.25*dx1, 0.25*dx1, -0.25*dx1, 0.25*dx1], N_bad)
+        x2_list = x2_bad + np.tile([0.25*dx1, 0.25*dx1, -0.25*dx1, -0.25*dx1], N_bad)
+        ##
+        time2 = time.time()
+        # print('list built finished in', time2-time1)
 
-        # split good and bad
-        dx1 = x1_node[1]-x1_node[0]
-        dx2 = x2_node[1]-x2_node[0]
-        # Tree.InitialNotesFunc(dx1*dx2, x1_grids, x2_grids, T_grids, 'single')
-        # Tree.SplitFunc(T_grids)
-        Tree.SplitFunc(dx1*dx2, x1_grids, x2_grids, T_grids, 'single')
-        print('Split finished in', time.time()-time1)
+        # +++ calculate tau & dtau
+        T_list = TFunc([x1_list, x2_list], xL12, lens_model, kappa, gamma)
+        # gradient for error calculation
+        dtaudx1, dtaudx2 = dTFunc([x1_list, x2_list], xL12, lens_model, kappa, gamma)
+        dT_list = np.sqrt(np.square(dtaudx1)+np.square(dtaudx2))
+        ##
+        time1 = time.time()
+        # print('T_grid and dT_grids finished in', time1-time2)
 
+        # +++ split good and bad
+        dx1 *= 0.5
+        dx2 *= 0.5
+        Tree.SplitFunc(dx1*dx2, x1_list, x2_list, T_list, dT_list)
+        # print('Split finished in', time.time()-time1)
 
-    return Tree.good_nodes
+    # re-set origin of tau
+    Tree.good_nodes['tau'] -= tImin
+
+    # hist counting
+    N_bins = int((tlim-tImin)/dt)
+    Ft_list, bin_edges = np.histogram(Tree.good_nodes['tau'].values, N_bins, weights=Tree.good_nodes['weights'].values/dt)
+    tau_list = (bin_edges[1:]+bin_edges[:-1])/2.
+
+    # avoid edge effects
+    tau_list = tau_list[:-10]
+    Ft_list = Ft_list[:-10]
+
+    # calculate signular part
+    Ftc = FtSingularFunc(images_info, tau_list)
+
+    # remove signular part
+    Ftd = Ft_list - Ftc
+
+    return tau_list, Ftd, Ft_list
 
 if __name__ == '__main__':
 
@@ -319,14 +294,18 @@ if __name__ == '__main__':
 
     print('start running...')
     start = time.time()
-    good_nodes = FtHistFunc([xL1, xL2], lens_model, kappa, gamma, tlim, dt)
+    tau_list, Ftd, Ft_list = FtHistFunc([xL1, xL2], lens_model, kappa, gamma, tlim, dt)
     # print(good_nodes)
     print('finished in', time.time()-start)
 
-    N_z = int((np.amax(good_nodes['tau'].values)-np.amin(good_nodes['tau'].values))/dt)
-    plt.hist(good_nodes['tau'].values, N_z, color='gray', weights=good_nodes['weights'].values/dt)
-    plt.savefig('../../plot/test_histT.png',dpi=300)
-    
+    outfile = '../../plot/test_Ft.png'
+    plt.plot(tau_list, Ft_list)
+    plt.savefig(outfile, dpi=300)
+    plt.close()
+    print('Plot saved to', outfile)
 
-    
-
+    outfile = '../../plot/test_Ftd.png'
+    plt.plot(tau_list, Ftd)
+    plt.savefig(outfile, dpi=300)
+    plt.close()
+    print('Plot saved to', outfile)
