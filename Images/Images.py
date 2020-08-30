@@ -2,7 +2,7 @@
 # @Author: lshuns
 # @Date:   2020-08-03 16:53:12
 # @Last Modified by:   lshuns
-# @Last Modified time: 2020-08-04 15:53:53
+# @Last Modified time: 2020-08-29 16:08:38
 
 ### solve the lens equation
 
@@ -177,7 +177,20 @@ def muFunc(x12, xL12, lens_model, kappa=0, gamma=0):
     # magnification
     mu = 1./(j11*j22-j12*j12)
 
-    return mu
+    # trace (for image type)
+    tr = j11 + j22
+
+    # image type
+    flag_min = (mu>0) & (tr>0)
+    flag_max = (mu>0) & (tr<0)
+    flag_saddle = (mu<0)
+    ##
+    Itype = np.empty(len(mu), dtype=object)
+    Itype[flag_min] = 'min'
+    Itype[flag_max] = 'max'
+    Itype[flag_saddle] = 'saddle'
+
+    return mu, Itype
 
 
 def Images(xL12, lens_model, kappa=0, gamma=0, return_mu=False, return_T=False):
@@ -238,9 +251,10 @@ def Images(xL12, lens_model, kappa=0, gamma=0, return_mu=False, return_T=False):
 
     # +++++++++++++ magnification 
     if return_mu:
-        mag = muFunc(xI12, xL12, lens_model, kappa, gamma)
+        mag, Itype = muFunc(xI12, xL12, lens_model, kappa, gamma)
     else:
         mag = None
+        Itype = None
 
     # +++++++++++++ time delay
     if return_T:
@@ -248,7 +262,7 @@ def Images(xL12, lens_model, kappa=0, gamma=0, return_mu=False, return_T=False):
     else:
         tau = None
 
-    return (nimages, xI12, mag, tau)
+    return nimages, xI12, mag, tau, Itype
 
 if __name__ == '__main__':
 
