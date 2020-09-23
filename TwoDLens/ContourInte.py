@@ -2,7 +2,7 @@
 # @Author: lshuns & mrgr
 # @Date:   2020-07-17 15:49:19
 # @Last Modified by:   lshuns
-# @Last Modified time: 2020-08-30 12:45:03
+# @Last Modified time: 2020-09-23 18:10:18
 
 ### solve the diffraction integral in virture of Fourier transform & histogram counting
 ###### reference: Nakamura 1999; Ulmer 1995
@@ -76,7 +76,6 @@ class TreeClass(object):
         # ++++++++++++++ bad node using simple directory
         self.bad_nodes = [x1_list[flag_bad], x2_list[flag_bad], T_list[flag_bad], dT_list[flag_bad]]
 
-
 def FtSingularFunc(images_info, tau_list):
     """
     Calculate the singular part of F(t)
@@ -113,6 +112,41 @@ def FtSingularFunc(images_info, tau_list):
         Ftc += tmp
 
     return Ftc
+
+def FwSingularFunc(images_info, w_list):
+    """
+    Calculate the singular part of F(w)
+
+    Parameters
+    ----------
+    images_info: DataFrame
+        All images' information.
+    w_list: numpy array
+        Sampling of w where Fwc being calculated.
+    """
+
+    # shift tau
+    images_info['tauI'] -= np.amin(images_info['tauI'].values)
+
+    Fwc = np.zeros_like(w_list, dtype='cfloat')
+    for index, row in images_info.iterrows():
+        # min 
+        if row['typeI'] == 'min':
+            Fwc += (row['muI']**0.5) * np.exp(1j*w_list*row['tauI'])
+            # print(">>>> a min image")
+        # max 
+        elif row['typeI'] == 'max':
+            Fwc += (row['muI']**0.5) * np.exp(1j*w_list*row['tauI'] - 1j*np.pi)
+            # print(">>>> a max image")
+        # saddle 
+        elif row['typeI'] == 'saddle':
+            Fwc += ((-row['muI'])**0.5) * np.exp(1j*w_list*row['tauI'] - 1j*np.pi*0.5)
+            # print(">>>> a saddle image")
+        else:
+            raise Exception("Unsupported image type {:} !".format(row['typeI']))
+
+    return Fwc
+
 
 def FtHistFunc(xL12, lens_model, kappa=0, gamma=0, tlim=6., dt=1e-2):
     """
@@ -279,14 +313,57 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import time 
     
+    # # ++++++++++++++++++++++++++ 2D
+    # # lens
+    # lens_model = 'point'
+    # xL1 = 0.1
+    # xL2 = 0.1
+
+    # # external shear
+    # kappa = 0
+    # gamma = 0.2
+
+    # # accuracy
+    # tlim = 0.5
+    # dt = 1e-3
+
+    # print('start running...')
+    # start = time.time()
+    # tau_list, Ftd, Ft_list = FtHistFunc([xL1, xL2], lens_model, kappa, gamma, tlim, dt)
+    # # print(good_nodes)
+    # print('finished in', time.time()-start)
+    # np.savetxt('../../test/Ftd.txt', Ftd)
+    # np.savetxt('../../test/t.txt', tau_list)
+    # plt.plot(tau_list, Ft_list)
+    # plt.show()
+    # plt.close()
+    # plt.plot(tau_list, Ftd)
+    # plt.show()
+    # plt.close()
+
+
+    # # outfile = '../../plot/test_Ft.png'
+    # # plt.plot(tau_list, Ft_list)
+    # # plt.savefig(outfile, dpi=300)
+    # # plt.close()
+    # # print('Plot saved to', outfile)
+
+    # # outfile = '../../plot/test_Ftd.png'
+    # # plt.plot(tau_list, Ftd)
+    # # plt.savefig(outfile, dpi=300)
+    # # plt.close()
+    # # print('Plot saved to', outfile)
+
+
+    # ++++++++++++++++++++++++++ 1D
     # lens
     lens_model = 'point'
     xL1 = 0.1
     xL2 = 0.1
 
     # external shear
-    kappa = 0
-    gamma = 0.2
+    kappa = 0.
+    gamma = 0.
 
     # accuracy
     tlim = 0.5
@@ -297,15 +374,26 @@ if __name__ == '__main__':
     tau_list, Ftd, Ft_list = FtHistFunc([xL1, xL2], lens_model, kappa, gamma, tlim, dt)
     # print(good_nodes)
     print('finished in', time.time()-start)
+    np.savetxt('../../test/Ftd_1d.txt', Ftd)
+    np.savetxt('../../test/t_1d.txt', tau_list)
+    np.savetxt('../../test/Ft_1d.txt', Ft_list)
+    plt.plot(tau_list, Ft_list)
+    plt.show()
+    plt.close()
+    plt.plot(tau_list, Ftd)
+    plt.show()
+    plt.close()
 
-    outfile = '../../plot/test_Ft.png'
+    outfile = '../../plot/test_Ft_1d.png'
     plt.plot(tau_list, Ft_list)
     plt.savefig(outfile, dpi=300)
     plt.close()
     print('Plot saved to', outfile)
 
-    outfile = '../../plot/test_Ftd.png'
+    outfile = '../../plot/test_Ftd_1d.png'
     plt.plot(tau_list, Ftd)
     plt.savefig(outfile, dpi=300)
     plt.close()
     print('Plot saved to', outfile)
+
+
