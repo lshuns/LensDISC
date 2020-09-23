@@ -2,7 +2,7 @@
 # @Author: lshuns
 # @Date:   2020-08-03 16:53:12
 # @Last Modified by:   lshuns
-# @Last Modified time: 2020-08-29 16:08:38
+# @Last Modified time: 2020-09-23 14:15:59
 
 ### solve the lens equation
 
@@ -42,8 +42,8 @@ def TFunc(x12, xL12, lens_model, kappa=0, gamma=0):
     tau = 0.5*(x1**2.*(1-kappa-gamma) + x2**2.*(1-kappa+gamma))
 
     # distance between light impact position and lens position
-    dx1 = np.absolute(x1-xL12[0])
-    dx2 = np.absolute(x2-xL12[1])
+    dx1 = x1-xL12[0]
+    dx2 = x2-xL12[1]
 
     # deflection potential
     if lens_model == 'point':
@@ -213,41 +213,60 @@ def Images(xL12, lens_model, kappa=0, gamma=0, return_mu=False, return_T=False):
         Return the time delay (or not).
     """
 
+
+
     # +++++++++++++ solve the lens equation
+    # 1D problem
+    if gamma==0:
+        ## in the same line as the lens
+        theta = np.arctan(xL12[1]/xL12[0]) # returns [0, pi/2]
+        rL = (xL12[0]**2 + xL12[1]**2)**0.5
+        ## solve r
+        if lens_model == 'point':
+            ## two solutions
+            r_t = np.array([0.5 * (-rL + (rL**2 + 4./(1-kappa))**0.5), 
+                            0.5 * (-rL - (rL**2 + 4./(1-kappa))**0.5)])
+            nimages = 2
+            ## to x, y
+            dx1 = r_t*np.cos(theta)
+            dx2 = r_t*np.sin(theta)
+            xI12 = [dx1 + xL12[0], dx2 + xL12[1]]
 
-    # solve the theta-function
-    N_theta_t = 100
-    d_theta_t = 1e-3
+    # 2D problem
+    else:
+        # solve the theta-function
+        N_theta_t = 100
+        d_theta_t = 1e-3
 
-    node_theta_t = np.array([0, 0.5*np.pi, np.pi, 1.5*np.pi, 2.*np.pi])
+        node_theta_t = np.array([0, 0.5*np.pi, np.pi, 1.5*np.pi, 2.*np.pi])
 
-    theta_t_res = []
+        theta_t_res = []
 
-    for i in range(len(node_theta_t)-1):
+        for i in range(len(node_theta_t)-1):
 
-        theta_t = np.linspace(node_theta_t[i]+d_theta_t, node_theta_t[i+1]-d_theta_t, N_theta_t)
-        theta_t_f = ThetaOrRFunc(theta_t, xL12, lens_model, kappa, gamma, 'theta')
+            theta_t = np.linspace(node_theta_t[i]+d_theta_t, node_theta_t[i+1]-d_theta_t, N_theta_t)
+            theta_t_f = ThetaOrRFunc(theta_t, xL12, lens_model, kappa, gamma, 'theta')
 
-        # those with root
-        flag_root = (theta_t_f[1:] * theta_t_f[:-1]) <=0
-        theta_t_min = theta_t[:-1][flag_root]
-        theta_t_max = theta_t[1:][flag_root]
-        for j in range(len(theta_t_min)):
-            tmp = op.brentq(ThetaOrRFunc, theta_t_min[j],theta_t_max[j], args=(xL12, lens_model, kappa, gamma, 'theta'))
-            theta_t_res.append(tmp)
+            # those with root
+            flag_root = (theta_t_f[1:] * theta_t_f[:-1]) <=0
+            theta_t_min = theta_t[:-1][flag_root]
+            theta_t_max = theta_t[1:][flag_root]
+            for j in range(len(theta_t_min)):
+                tmp = op.brentq(ThetaOrRFunc, theta_t_min[j],theta_t_max[j], args=(xL12, lens_model, kappa, gamma, 'theta'))
+                theta_t_res.append(tmp)
 
-    # corresponding r_t
-    theta_t_res = np.array(theta_t_res)
-    r_t = ThetaOrRFunc(theta_t_res, xL12, lens_model, kappa, gamma, 'r')
-    # true solutions
-    true_flag = r_t>1e-5
-    theta_t_res = theta_t_res[true_flag]
-    r_t = r_t[true_flag]
-    nimages = len(theta_t_res)
-    # to x, y
-    dx1 = r_t*np.cos(theta_t_res)
-    dx2 = r_t*np.sin(theta_t_res)
-    xI12 = [dx1 + xL12[0], dx2 + xL12[1]]
+        # corresponding r_t
+        theta_t_res = np.array(theta_t_res)
+        r_t = ThetaOrRFunc(theta_t_res, xL12, lens_model, kappa, gamma, 'r')
+        # true solutions
+        true_flag = r_t>1e-5
+        theta_t_res = theta_t_res[true_flag]
+        r_t = r_t[true_flag]
+        nimages = len(theta_t_res)
+        # to x, y
+        dx1 = r_t*np.cos(theta_t_res)
+        dx2 = r_t*np.sin(theta_t_res)
+        xI12 = [dx1 + xL12[0], dx2 + xL12[1]]
 
     # +++++++++++++ magnification 
     if return_mu:
